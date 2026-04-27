@@ -33,6 +33,21 @@ public class EnvironmentDeploymentStateRepository {
                 """, UUID.randomUUID(), projectId, serviceId, environmentId, planId);
     }
 
+    public void markDeployed(UUID projectId, UUID serviceId, UUID environmentId, UUID artifactId, UUID planId) {
+        jdbcTemplate.update("""
+                insert into environment_deployment_states (
+                    id, project_id, service_id, environment_id, current_artifact_id,
+                    last_deployment_plan_id, state_status
+                )
+                values (?, ?, ?, ?, ?, ?, 'DEPLOYED')
+                on conflict (service_id, environment_id)
+                do update set current_artifact_id = excluded.current_artifact_id,
+                    last_deployment_plan_id = excluded.last_deployment_plan_id,
+                    state_status = 'DEPLOYED',
+                    updated_at = now()
+                """, UUID.randomUUID(), projectId, serviceId, environmentId, artifactId, planId);
+    }
+
     public Optional<EnvironmentDeploymentStateResponse> find(UUID serviceId, UUID environmentId) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""

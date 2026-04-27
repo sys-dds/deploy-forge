@@ -55,7 +55,18 @@ public class GateExecutionService {
         List<GateDefinitionResponse> definitions = definitions(projectId, plan, request.gateDefinitionIds());
         List<GateAttemptResponse> attempts = new ArrayList<>();
         for (GateDefinitionResponse definition : definitions) {
-            attempts.add(run(projectId, plan, definition, request.metrics(), request.requestedBy()));
+            attempts.add(run(projectId, plan, definition, request.metrics(), request.requestedBy(), null, null));
+        }
+        return attempts;
+    }
+
+    public List<GateAttemptResponse> evaluateForWave(UUID projectId, UUID planId, UUID rolloutExecutionId,
+            UUID rolloutWaveId, EvaluateGatesRequest request) {
+        DeploymentPlanResponse plan = requireRunnablePlan(projectId, planId);
+        List<GateDefinitionResponse> definitions = definitions(projectId, plan, request.gateDefinitionIds());
+        List<GateAttemptResponse> attempts = new ArrayList<>();
+        for (GateDefinitionResponse definition : definitions) {
+            attempts.add(run(projectId, plan, definition, request.metrics(), request.requestedBy(), rolloutExecutionId, rolloutWaveId));
         }
         return attempts;
     }
@@ -81,7 +92,7 @@ public class GateExecutionService {
         DeploymentPlanResponse plan = requireRunnablePlan(projectId, attempt.deploymentPlanId());
         eventRepository.record(projectId, plan.id(), plan.serviceId(), plan.targetEnvironmentId(), plan.artifactId(),
                 DeploymentIntentEventType.GATE_RERUN_REQUESTED, request.requestedBy(), request.reason(), Jsonb.object());
-        return run(projectId, plan, definition, request.metrics(), request.requestedBy());
+        return run(projectId, plan, definition, request.metrics(), request.requestedBy(), null, null);
     }
 
     public GateEvidenceResponse evidence(UUID projectId, UUID planId) {
@@ -112,8 +123,40 @@ public class GateExecutionService {
         return new GateEvidenceResponse(planId, overall, requiredPassed, rows);
     }
 
+    public GateEvidenceResponse waveEvidence(UUID projectId, UUID planId, UUID rolloutWaveId) {
+        planService.get(projectId, planId);
+        List<GateDefinitionResponse> definitions = definitionRepository.list(projectId);
+        Map<UUID, GateDefinitionResponse> byId = new LinkedHashMap<>();
+        definitions.forEach(definition -> byId.put(definition.id(), definition));
+        List<GateAttemptResponse> attempts = executionRepository.listByWave(projectId, rolloutWaveId);
+        if (attempts.isEmpty()) {
+            return new GateEvidenceResponse(planId, "PENDING", false, List.of());
+        }
+        List<GateEvidenceAttemptResponse> rows = attempts.stream()
+                .map(attempt -> {
+                    GateDefinitionResponse definition = byId.get(attempt.gateDefinitionId());
+                    return new GateEvidenceAttemptResponse(attempt.gateDefinitionId(), definition == null ? "unknown" : definition.name(),
+                            definition == null ? GateType.SYNTHETIC_CHECK : definition.gateType(),
+                            definition != null && definition.required(), attempt.attemptNumber(), attempt.status(),
+                            attempt.observed(), attempt.resultSummary(), attempt.failureReason());
+                }).toList();
+        Map<UUID, GateEvidenceAttemptResponse> latest = new LinkedHashMap<>();
+        rows.stream().sorted(Comparator.comparingInt(GateEvidenceAttemptResponse::attemptNumber))
+                .forEach(row -> latest.put(row.gateDefinitionId(), row));
+        boolean requiredPassed = latest.values().stream()
+                .filter(GateEvidenceAttemptResponse::required)
+                .allMatch(row -> row.status() == GateAttemptStatus.PASSED || row.status() == GateAttemptStatus.OVERRIDDEN);
+        boolean anyRequiredFailed = latest.values().stream()
+                .filter(GateEvidenceAttemptResponse::required)
+                .anyMatch(row -> row.status() == GateAttemptStatus.FAILED || row.status() == GateAttemptStatus.TIMED_OUT);
+        boolean anyFailed = latest.values().stream()
+                .anyMatch(row -> row.status() == GateAttemptStatus.FAILED || row.status() == GateAttemptStatus.TIMED_OUT);
+        String overall = requiredPassed ? (anyFailed ? "MIXED" : "PASSED") : (anyRequiredFailed ? "FAILED" : "PENDING");
+        return new GateEvidenceResponse(planId, overall, requiredPassed, rows);
+    }
+
     private GateAttemptResponse run(UUID projectId, DeploymentPlanResponse plan, GateDefinitionResponse definition,
-            Map<String, Double> metrics, String actor) {
+            Map<String, Double> metrics, String actor, UUID rolloutExecutionId, UUID rolloutWaveId) {
         int attemptNumber = executionRepository.nextAttempt(plan.id(), definition.id());
         GateResult result = switch (definition.gateType()) {
             case HTTP_HEALTH -> http(definition);
@@ -121,7 +164,7 @@ public class GateExecutionService {
             case METRIC_THRESHOLD -> metric(definition, metrics == null ? Map.of() : metrics);
         };
         GateAttemptResponse attempt = executionRepository.create(projectId, plan.id(), definition.id(), attemptNumber,
-                result.status(), result.observed(), result.summary(), result.failureReason());
+                result.status(), result.observed(), result.summary(), result.failureReason(), rolloutExecutionId, rolloutWaveId);
         eventRepository.record(projectId, plan.id(), plan.serviceId(), plan.targetEnvironmentId(), plan.artifactId(),
                 DeploymentIntentEventType.GATE_EVALUATED, actor, result.summary(),
                 Jsonb.object().put("gateDefinitionId", definition.id().toString()).put("status", result.status().name()));

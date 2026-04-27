@@ -75,6 +75,14 @@ public class DeploymentLockRepository {
         return Boolean.TRUE.equals(exists);
     }
 
+    public Optional<DeploymentLockResponse> findActiveByPlan(UUID projectId, UUID planId) {
+        return findOne("""
+                select id, project_id, service_id, environment_id, deployment_plan_id, status, lock_owner, reason,
+                    fencing_token, acquired_at, expires_at, released_at, released_by, release_reason
+                from deployment_locks where project_id = ? and deployment_plan_id = ? and status = 'ACTIVE'
+                """, projectId, planId);
+    }
+
     private Optional<DeploymentLockResponse> findOne(String sql, Object... args) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, this::map, args));
