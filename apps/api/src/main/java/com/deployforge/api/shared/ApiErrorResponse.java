@@ -6,6 +6,7 @@ public record ApiErrorResponse(
         Instant timestamp,
         int status,
         String error,
-        String message
+        String message,
+        String code
 ) {
 }

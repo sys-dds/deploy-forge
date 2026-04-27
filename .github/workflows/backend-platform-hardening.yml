@@ -24,7 +24,7 @@ jobs:
         working-directory: apps/api
         run: |
           chmod +x ./mvnw
-          ./mvnw "-Dtest=FoundationIntegrationTest,SystemControllerIntegrationTest,FoundationMigrationIntegrationTest,DomainFoundationIntegrationTest" test
+          ./mvnw "-Dtest=FoundationIntegrationTest,SystemControllerIntegrationTest,FoundationMigrationIntegrationTest,DomainFoundationIntegrationTest,FoundationValidationIntegrationTest,FoundationMetadataIntegrationTest,ReleaseArtifactMigrationIntegrationTest,ReleaseArtifactRegistryIntegrationTest,ReleaseArtifactImmutabilityIntegrationTest,ReleaseArtifactEvidenceIntegrationTest,ArtifactDeployabilityIntegrationTest,DeploymentPlanMigrationIntegrationTest,DeploymentPlanIntegrationTest,DeploymentPlanIdempotencyIntegrationTest,DeploymentPlanRiskCalculationIntegrationTest,DeploymentPlanEvidenceSnapshotIntegrationTest,DeploymentPlanLifecycleIntegrationTest,EnvironmentCurrentStateIntegrationTest,DeploymentIntentEventLogIntegrationTest,Deploy002To017FunctionalIntegrationTest" test
 
       - name: Compile backend
         working-directory: apps/api
