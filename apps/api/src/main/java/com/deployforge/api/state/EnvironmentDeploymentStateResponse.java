@@ -8,7 +8,10 @@ public record EnvironmentDeploymentStateResponse(
         UUID serviceId,
         UUID environmentId,
         UUID currentArtifactId,
+        UUID previousStableArtifactId,
         UUID lastDeploymentPlanId,
+        UUID lastRolloutExecutionId,
+        UUID lastRollbackExecutionId,
         String stateStatus,
         OffsetDateTime updatedAt
 ) {

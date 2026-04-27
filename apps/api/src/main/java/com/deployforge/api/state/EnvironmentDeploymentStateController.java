@@ -52,6 +52,9 @@ public class EnvironmentDeploymentStateController {
                         environmentId,
                         null,
                         null,
+                        null,
+                        null,
+                        null,
                         "NEVER_DEPLOYED",
                         OffsetDateTime.now()
                 ));

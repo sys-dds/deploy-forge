@@ -22,6 +22,7 @@ import com.deployforge.api.shared.Jsonb;
 import com.deployforge.api.state.EnvironmentDeploymentStateRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RolloutService {
@@ -48,6 +49,7 @@ public class RolloutService {
         this.eventRepository = eventRepository;
     }
 
+    @Transactional
     public RolloutExecutionResponse start(UUID projectId, UUID planId, StartRolloutRequest request) {
         DeploymentPlanResponse plan = requireReadyPlan(projectId, planId);
         return rolloutRepository.findByPlan(projectId, planId).map(existing -> {
@@ -65,6 +67,7 @@ public class RolloutService {
             }
             RolloutExecutionResponse rollout = rolloutRepository.create(plan, request);
             rolloutRepository.createWaves(rollout);
+            stateRepository.markStatus(projectId, plan.serviceId(), plan.targetEnvironmentId(), plan.id(), rollout.id(), "DEPLOYING");
             eventRepository.record(projectId, planId, plan.serviceId(), plan.targetEnvironmentId(), plan.artifactId(),
                     DeploymentIntentEventType.ROLLOUT_STARTED, request.startedBy(), request.reason(), Jsonb.object());
             eventRepository.record(projectId, planId, plan.serviceId(), plan.targetEnvironmentId(), plan.artifactId(),
@@ -90,6 +93,7 @@ public class RolloutService {
         return rolloutRepository.waves(rolloutId);
     }
 
+    @Transactional
     public List<GateAttemptResponse> evaluateWaveGates(UUID projectId, UUID rolloutId, int waveNumber, EvaluateGatesRequest request) {
         RolloutExecutionResponse rollout = requireActive(get(projectId, rolloutId));
         RolloutWaveResponse wave = requireWave(rollout, waveNumber);
@@ -104,6 +108,8 @@ public class RolloutService {
         if (requiredFailed) {
             rolloutRepository.markWave(wave.id(), RolloutWaveStatus.FAILED, "Required wave gate failed");
             RolloutExecutionResponse failed = rolloutRepository.fail(rollout.id(), "Required wave gate failed");
+            stateRepository.markStatus(projectId, rollout.serviceId(), rollout.environmentId(), rollout.deploymentPlanId(),
+                    rollout.id(), "ROLLBACK_RECOMMENDED");
             createRecommendation(failed, "Required wave gate failed; rollback is recommended");
             eventRepository.record(projectId, rollout.deploymentPlanId(), rollout.serviceId(), rollout.environmentId(), rollout.artifactId(),
                     DeploymentIntentEventType.ROLLOUT_WAVE_FAILED, request.requestedBy(), "Required wave gate failed",
@@ -120,6 +126,7 @@ public class RolloutService {
         return gateExecutionService.waveEvidence(projectId, rollout.deploymentPlanId(), wave.id());
     }
 
+    @Transactional
     public RolloutExecutionResponse advance(UUID projectId, UUID rolloutId, RolloutActionRequest request) {
         RolloutExecutionResponse rollout = requireActive(get(projectId, rolloutId));
         RolloutWaveResponse current = requireWave(rollout, rollout.currentWaveNumber());
@@ -133,13 +140,16 @@ public class RolloutService {
                 Jsonb.object().put("waveNumber", current.waveNumber()));
         List<RolloutWaveResponse> waves = rolloutRepository.waves(rollout.id());
         if (current.waveNumber() >= waves.size()) {
-            stateRepository.markDeployed(projectId, rollout.serviceId(), rollout.environmentId(), rollout.artifactId(), rollout.deploymentPlanId());
+            stateRepository.markDeployed(projectId, rollout.serviceId(), rollout.environmentId(), rollout.artifactId(),
+                    rollout.deploymentPlanId(), rollout.id());
             releaseLock(rollout, request.actor(), "Rollout succeeded");
             RolloutExecutionResponse succeeded = rolloutRepository.mark(rollout.id(), RolloutStatus.SUCCEEDED);
             eventRepository.record(projectId, rollout.deploymentPlanId(), rollout.serviceId(), rollout.environmentId(), rollout.artifactId(),
                     DeploymentIntentEventType.ROLLOUT_SUCCEEDED, request.actor(), request.reason(), Jsonb.object());
             return succeeded;
         }
+        stateRepository.markStatus(projectId, rollout.serviceId(), rollout.environmentId(), rollout.deploymentPlanId(),
+                rollout.id(), "PARTIALLY_DEPLOYED");
         RolloutWaveResponse next = requireWave(rollout, current.waveNumber() + 1);
         rolloutRepository.markWave(next.id(), RolloutWaveStatus.RUNNING, null);
         RolloutExecutionResponse advanced = rolloutRepository.setCurrentWave(rollout.id(), next.waveNumber());
@@ -149,6 +159,7 @@ public class RolloutService {
         return advanced;
     }
 
+    @Transactional
     public RolloutExecutionResponse pause(UUID projectId, UUID rolloutId, RolloutActionRequest request) {
         RolloutExecutionResponse rollout = get(projectId, rolloutId);
         if (rollout.status() == RolloutStatus.PAUSED) {
@@ -166,6 +177,7 @@ public class RolloutService {
         return paused;
     }
 
+    @Transactional
     public RolloutExecutionResponse resume(UUID projectId, UUID rolloutId, RolloutActionRequest request) {
         RolloutExecutionResponse rollout = get(projectId, rolloutId);
         if (rollout.status() != RolloutStatus.PAUSED) {
@@ -177,6 +189,7 @@ public class RolloutService {
         return resumed;
     }
 
+    @Transactional
     public RolloutExecutionResponse abort(UUID projectId, UUID rolloutId, RolloutActionRequest request) {
         RolloutExecutionResponse rollout = get(projectId, rolloutId);
         if (rollout.status() == RolloutStatus.ABORTED) {
@@ -247,9 +260,24 @@ public class RolloutService {
     }
 
     private void createRecommendation(RolloutExecutionResponse rollout, String reason) {
+        if (recommendationRepository.findOpen(rollout.projectId(), rollout.id()).isPresent()) {
+            return;
+        }
         UUID currentArtifact = stateRepository.find(rollout.serviceId(), rollout.environmentId())
                 .map(state -> state.currentArtifactId()).orElse(null);
-        RollbackRecommendationResponse recommendation = recommendationRepository.create(rollout, currentArtifact, reason);
+        List<RolloutWaveResponse> waves = rolloutRepository.waves(rollout.id());
+        int failedWave = waves.stream().filter(wave -> wave.status() == RolloutWaveStatus.FAILED)
+                .mapToInt(RolloutWaveResponse::waveNumber).findFirst().orElse(rollout.currentWaveNumber() == null ? 0 : rollout.currentWaveNumber());
+        int completed = (int) waves.stream().filter(wave -> wave.status() == RolloutWaveStatus.PASSED).count();
+        int maxReached = waves.stream().filter(wave -> wave.status() == RolloutWaveStatus.PASSED)
+                .mapToInt(RolloutWaveResponse::trafficPercentage).max().orElse(0);
+        int failedTraffic = waves.stream().filter(wave -> wave.waveNumber() == failedWave)
+                .mapToInt(RolloutWaveResponse::trafficPercentage).findFirst().orElse(0);
+        RollbackRecommendationResponse recommendation = recommendationRepository.create(rollout, currentArtifact, reason,
+                Jsonb.object().put("failedWaveNumber", failedWave)
+                        .put("failedTrafficPercentage", failedTraffic)
+                        .put("completedWaveCount", completed)
+                        .put("maxTrafficPercentageReached", maxReached));
         eventRepository.record(rollout.projectId(), rollout.deploymentPlanId(), rollout.serviceId(), rollout.environmentId(), rollout.artifactId(),
                 DeploymentIntentEventType.ROLLBACK_RECOMMENDED, "system", reason,
                 Jsonb.object().put("rollbackRecommendationId", recommendation.id().toString()));

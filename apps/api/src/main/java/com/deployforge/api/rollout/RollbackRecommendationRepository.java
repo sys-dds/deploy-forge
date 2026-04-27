@@ -6,6 +6,8 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.deployforge.api.shared.Jsonb;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -19,15 +21,21 @@ public class RollbackRecommendationRepository {
     }
 
     public RollbackRecommendationResponse create(RolloutExecutionResponse rollout, UUID recommendedArtifactId, String reason) {
+        return create(rollout, recommendedArtifactId, reason, Jsonb.object());
+    }
+
+    public RollbackRecommendationResponse create(RolloutExecutionResponse rollout, UUID recommendedArtifactId, String reason,
+            JsonNode metadata) {
         return findOpen(rollout.projectId(), rollout.id()).orElseGet(() -> jdbcTemplate.queryForObject("""
                 insert into rollback_recommendations (
                     id, project_id, rollout_execution_id, deployment_plan_id, service_id, environment_id,
-                    failed_artifact_id, recommended_artifact_id, recommendation_status, reason
+                    failed_artifact_id, recommended_artifact_id, recommendation_status, reason, metadata_json
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)
                 returning *
                 """, this::map, UUID.randomUUID(), rollout.projectId(), rollout.id(), rollout.deploymentPlanId(),
-                rollout.serviceId(), rollout.environmentId(), rollout.artifactId(), recommendedArtifactId, reason));
+                rollout.serviceId(), rollout.environmentId(), rollout.artifactId(), recommendedArtifactId, reason,
+                Jsonb.toPgObject(metadata)));
     }
 
     public Optional<RollbackRecommendationResponse> findOpen(UUID projectId, UUID rolloutId) {
@@ -58,6 +66,18 @@ public class RollbackRecommendationRepository {
                 """, this::map, request.acknowledgedBy(), request.reason(), recommendationId);
     }
 
+    public RollbackRecommendationResponse supersede(UUID recommendationId, String actor, String reason) {
+        return jdbcTemplate.queryForObject("""
+                update rollback_recommendations
+                set recommendation_status = 'SUPERSEDED',
+                    acknowledged_at = now(),
+                    acknowledged_by = ?,
+                    acknowledgement_reason = ?
+                where id = ?
+                returning *
+                """, this::map, actor, reason, recommendationId);
+    }
+
     private Optional<RollbackRecommendationResponse> findOne(String sql, Object... args) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject(sql, this::map, args));
@@ -72,6 +92,7 @@ public class RollbackRecommendationRepository {
                 rs.getObject("service_id", UUID.class), rs.getObject("environment_id", UUID.class),
                 rs.getObject("failed_artifact_id", UUID.class), rs.getObject("recommended_artifact_id", UUID.class),
                 RollbackRecommendationStatus.valueOf(rs.getString("recommendation_status")), rs.getString("reason"),
+                Jsonb.fromString(rs.getString("metadata_json")),
                 rs.getObject("created_at", OffsetDateTime.class), rs.getObject("acknowledged_at", OffsetDateTime.class),
                 rs.getString("acknowledged_by"), rs.getString("acknowledgement_reason"));
     }
