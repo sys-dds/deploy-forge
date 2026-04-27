@@ -37,6 +37,7 @@ public class DeploymentConsistencyVerifier {
         desiredStateChecks(projectId, violations);
         actualMismatchNeedsOpenDrift(projectId, violations);
         staleTargetNeedsOpenDrift(projectId, violations);
+        expiredCommandLeaseReported(projectId, violations);
         return new DeploymentConsistencyResponse(projectId, violations.isEmpty(), violations);
     }
 
@@ -273,5 +274,15 @@ public class DeploymentConsistencyVerifier {
                 """, (RowCallbackHandler) rs -> violations.add(new ConsistencyViolationResponse("STALE_TARGET_WITHOUT_OPEN_DRIFT", "WARNING",
                 "Stale runtime target does not have an open stale-target drift finding", rs.getObject("id", UUID.class),
                 "RUN_DRIFT_CHECK")), projectId);
+    }
+
+    private void expiredCommandLeaseReported(UUID projectId, List<ConsistencyViolationResponse> violations) {
+        jdbcTemplate.query("""
+                select id
+                from deployment_commands
+                where project_id = ? and status in ('LEASED','RUNNING') and lease_expires_at < now()
+                """, (RowCallbackHandler) rs -> violations.add(new ConsistencyViolationResponse("EXPIRED_COMMAND_LEASE", "WARNING",
+                "Active command has an expired lease and needs runner takeover or operator recovery", rs.getObject("id", UUID.class),
+                "CLAIM_OR_FORCE_RELEASE_STALE_LEASE")), projectId);
     }
 }
