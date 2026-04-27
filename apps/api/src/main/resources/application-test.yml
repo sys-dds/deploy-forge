@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+
+deployforge:
+  node:
+    node-id: ${DEPLOYFORGE_NODE_ID:local-node-1}

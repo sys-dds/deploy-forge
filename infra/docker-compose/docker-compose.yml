@@ -1,0 +1,46 @@
+services:
+  deployforge-postgres:
+    image: postgres:17-alpine
+    container_name: deployforge-postgres
+    environment:
+      POSTGRES_DB: deployforge
+      POSTGRES_USER: deployforge
+      POSTGRES_PASSWORD: deployforge
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deployforge -d deployforge"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - deployforge-postgres-data:/var/lib/postgresql/data
+    networks:
+      - deployforge-net
+
+  deployforge-api:
+    build: ../../apps/api
+    container_name: deployforge-api
+    depends_on:
+      deployforge-postgres:
+        condition: service_healthy
+    environment:
+      DEPLOYFORGE_DB_URL: jdbc:postgresql://deployforge-postgres:5432/deployforge
+      DEPLOYFORGE_DB_USER: deployforge
+      DEPLOYFORGE_DB_PASSWORD: deployforge
+      DEPLOYFORGE_NODE_ID: local-node-1
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health/readiness | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - deployforge-net
+
+volumes:
+  deployforge-postgres-data:
+
+networks:
+  deployforge-net:
