@@ -31,17 +31,23 @@ public class GateExecutionRepository {
 
     public GateAttemptResponse create(UUID projectId, UUID planId, UUID gateDefinitionId, int attemptNumber,
             GateAttemptStatus status, JsonNode observed, String resultSummary, String failureReason) {
+        return create(projectId, planId, gateDefinitionId, attemptNumber, status, observed, resultSummary, failureReason, null, null);
+    }
+
+    public GateAttemptResponse create(UUID projectId, UUID planId, UUID gateDefinitionId, int attemptNumber,
+            GateAttemptStatus status, JsonNode observed, String resultSummary, String failureReason,
+            UUID rolloutExecutionId, UUID rolloutWaveId) {
         UUID id = UUID.randomUUID();
         return jdbcTemplate.queryForObject("""
                 insert into deployment_gate_attempts (
                     id, project_id, deployment_plan_id, gate_definition_id, attempt_number, status,
-                    observed_json, result_summary, failure_reason, completed_at
+                    observed_json, result_summary, failure_reason, completed_at, rollout_execution_id, rollout_wave_id
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, now(), ?, ?)
                 returning id, project_id, deployment_plan_id, gate_definition_id, attempt_number, status, observed_json::text,
                     result_summary, failure_reason, started_at, completed_at, overridden_at, overridden_by, override_reason
                 """, this::map, id, projectId, planId, gateDefinitionId, attemptNumber, status.name(),
-                Jsonb.toPgObject(observed), resultSummary, failureReason);
+                Jsonb.toPgObject(observed), resultSummary, failureReason, rolloutExecutionId, rolloutWaveId);
     }
 
     public Optional<GateAttemptResponse> find(UUID projectId, UUID attemptId) {
@@ -62,6 +68,14 @@ public class GateExecutionRepository {
                     result_summary, failure_reason, started_at, completed_at, overridden_at, overridden_by, override_reason
                 from deployment_gate_attempts where project_id = ? and deployment_plan_id = ? order by started_at, id
                 """, this::map, projectId, planId);
+    }
+
+    public List<GateAttemptResponse> listByWave(UUID projectId, UUID rolloutWaveId) {
+        return jdbcTemplate.query("""
+                select id, project_id, deployment_plan_id, gate_definition_id, attempt_number, status, observed_json::text,
+                    result_summary, failure_reason, started_at, completed_at, overridden_at, overridden_by, override_reason
+                from deployment_gate_attempts where project_id = ? and rollout_wave_id = ? order by started_at, id
+                """, this::map, projectId, rolloutWaveId);
     }
 
     public GateAttemptResponse override(UUID attemptId, String actor, String reason) {

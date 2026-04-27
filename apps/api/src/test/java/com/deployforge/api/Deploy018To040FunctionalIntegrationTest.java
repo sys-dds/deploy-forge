@@ -241,8 +241,6 @@ class Deploy018To040FunctionalIntegrationTest extends CoreReleaseIntentTestSuppo
                 .andExpect(jsonPath("$[*].eventType", hasItem("DEPLOYMENT_LOCK_RELEASED")))
                 .andExpect(jsonPath("$[*].eventType", hasItem("PLAN_ABORTED")));
 
-        assertTableAbsent("canary_waves");
-        assertTableAbsent("rollout_executions");
         assertTableAbsent("rollback_plans");
         assertTableAbsent("runner_leases");
     }
