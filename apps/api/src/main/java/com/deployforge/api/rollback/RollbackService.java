@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.deployforge.api.event.DeploymentIntentEventRepository;
 import com.deployforge.api.event.DeploymentIntentEventResponse;
 import com.deployforge.api.event.DeploymentIntentEventType;
+import com.deployforge.api.drift.DesiredEnvironmentStateService;
 import com.deployforge.api.gate.EvaluateGatesRequest;
 import com.deployforge.api.gate.GateAttemptResponse;
 import com.deployforge.api.gate.GateEvidenceResponse;
@@ -35,11 +36,12 @@ public class RollbackService {
     private final EnvironmentDeploymentStateRepository stateRepository;
     private final DeploymentLockRepository lockRepository;
     private final DeploymentIntentEventRepository eventRepository;
+    private final DesiredEnvironmentStateService desiredStateService;
 
     public RollbackService(RolloutService rolloutService, RollbackRecommendationRepository recommendationRepository,
             RollbackRepository rollbackRepository, com.deployforge.api.gate.GateExecutionService gateExecutionService,
             EnvironmentDeploymentStateRepository stateRepository, DeploymentLockRepository lockRepository,
-            DeploymentIntentEventRepository eventRepository) {
+            DeploymentIntentEventRepository eventRepository, DesiredEnvironmentStateService desiredStateService) {
         this.rolloutService = rolloutService;
         this.recommendationRepository = recommendationRepository;
         this.rollbackRepository = rollbackRepository;
@@ -47,6 +49,7 @@ public class RollbackService {
         this.stateRepository = stateRepository;
         this.lockRepository = lockRepository;
         this.eventRepository = eventRepository;
+        this.desiredStateService = desiredStateService;
     }
 
     @Transactional
@@ -134,6 +137,8 @@ public class RollbackService {
         eventRepository.record(projectId, rollback.deploymentPlanId(), rollback.serviceId(), rollback.environmentId(), rollback.targetArtifactId(),
                 DeploymentIntentEventType.ENVIRONMENT_STATE_UPDATED, request.actor(), "Environment rolled back",
                 Jsonb.object().put("stateStatus", "ROLLED_BACK"));
+        desiredStateService.recordRollbackSuccess(projectId, rollback.serviceId(), rollback.environmentId(), rollback.targetArtifactId(),
+                rollback.deploymentPlanId(), rollback.rolloutExecutionId(), rollback.id(), request.actor(), request.reason());
         return succeeded;
     }
 

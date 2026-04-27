@@ -9,6 +9,7 @@ import com.deployforge.api.artifact.ArtifactDeployabilityResponse;
 import com.deployforge.api.artifact.ReleaseArtifactRepository;
 import com.deployforge.api.artifact.ReleaseArtifactResponse;
 import com.deployforge.api.artifact.ReleaseArtifactService;
+import com.deployforge.api.drift.DriftService;
 import com.deployforge.api.environment.EnvironmentRepository;
 import com.deployforge.api.environment.EnvironmentResponse;
 import com.deployforge.api.gate.GateExecutionService;
@@ -41,6 +42,7 @@ public class DeploymentReadinessService {
     private final DeploymentLockRepository lockRepository;
     private final DeploymentOverrideRepository overrideRepository;
     private final GateExecutionService gateExecutionService;
+    private final DriftService driftService;
 
     public DeploymentReadinessService(DeploymentPlanService planService, ProjectRepository projectRepository,
             ServiceRepository serviceRepository, EnvironmentRepository environmentRepository,
@@ -48,7 +50,7 @@ public class DeploymentReadinessService {
             ProtectedEnvironmentPolicyRepository policyRepository, PromotionRuleRepository promotionRuleRepository,
             PromotionEvidenceRepository promotionEvidenceRepository, ApprovalRepository approvalRepository,
             DeploymentLockRepository lockRepository, DeploymentOverrideRepository overrideRepository,
-            GateExecutionService gateExecutionService) {
+            GateExecutionService gateExecutionService, DriftService driftService) {
         this.planService = planService;
         this.projectRepository = projectRepository;
         this.serviceRepository = serviceRepository;
@@ -62,6 +64,7 @@ public class DeploymentReadinessService {
         this.lockRepository = lockRepository;
         this.overrideRepository = overrideRepository;
         this.gateExecutionService = gateExecutionService;
+        this.driftService = driftService;
     }
 
     public DeploymentReadinessResponse get(UUID projectId, UUID planId) {
@@ -102,6 +105,10 @@ public class DeploymentReadinessService {
         boolean lockOk = lockRepository.activeForPlan(projectId, planId);
         add(checks, "DEPLOYMENT_LOCK_ACTIVE", lockOk, "Deployment lock is active for this plan", "Deployment lock must be acquired");
 
+        boolean driftClear = !driftService.hasBlockingDrift(projectId, plan.serviceId(), plan.targetEnvironmentId());
+        add(checks, driftClear ? "DRIFT_CLEAR" : "CRITICAL_DRIFT_PRESENT", driftClear,
+                "No unresolved critical drift exists", "Unresolved critical drift blocks rollout start");
+
         boolean ready = checks.stream().allMatch(check -> check.status().equals("PASS"));
         String action = recommended(checks);
         return new DeploymentReadinessResponse(planId, ready, checks, ready ? "READY" : action);
@@ -119,6 +126,7 @@ public class DeploymentReadinessService {
                     case "PROMOTION_EVIDENCE_PRESENT" -> "ADD_PROMOTION_EVIDENCE";
                     case "REQUIRED_GATES_PASSED" -> "RUN_GATES";
                     case "DEPLOYMENT_LOCK_ACTIVE" -> "ACQUIRE_LOCK";
+                    case "CRITICAL_DRIFT_PRESENT" -> "RESOLVE_DRIFT";
                     default -> "READY";
                 };
             }

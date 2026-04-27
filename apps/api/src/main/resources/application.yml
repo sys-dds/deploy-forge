@@ -30,3 +30,5 @@ management:
 deployforge:
   node:
     node-id: ${DEPLOYFORGE_NODE_ID:local-node-1}
+  drift:
+    target-stale-after-seconds: ${DEPLOYFORGE_DRIFT_TARGET_STALE_AFTER_SECONDS:300}
