@@ -7,3 +7,5 @@ spring:
 deployforge:
   node:
     node-id: ${DEPLOYFORGE_NODE_ID:local-node-1}
+  drift:
+    target-stale-after-seconds: 300

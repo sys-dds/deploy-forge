@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import com.deployforge.api.event.DeploymentIntentEventRepository;
 import com.deployforge.api.event.DeploymentIntentEventType;
+import com.deployforge.api.drift.DesiredEnvironmentStateService;
 import com.deployforge.api.gate.EvaluateGatesRequest;
 import com.deployforge.api.gate.GateAttemptResponse;
 import com.deployforge.api.gate.GateAttemptStatus;
@@ -34,11 +35,13 @@ public class RolloutService {
     private final RolloutRepository rolloutRepository;
     private final RollbackRecommendationRepository recommendationRepository;
     private final DeploymentIntentEventRepository eventRepository;
+    private final DesiredEnvironmentStateService desiredStateService;
 
     public RolloutService(DeploymentPlanService planService, DeploymentReadinessService readinessService,
             DeploymentLockRepository lockRepository, EnvironmentDeploymentStateRepository stateRepository,
             com.deployforge.api.gate.GateExecutionService gateExecutionService, RolloutRepository rolloutRepository,
-            RollbackRecommendationRepository recommendationRepository, DeploymentIntentEventRepository eventRepository) {
+            RollbackRecommendationRepository recommendationRepository, DeploymentIntentEventRepository eventRepository,
+            DesiredEnvironmentStateService desiredStateService) {
         this.planService = planService;
         this.readinessService = readinessService;
         this.lockRepository = lockRepository;
@@ -47,6 +50,7 @@ public class RolloutService {
         this.rolloutRepository = rolloutRepository;
         this.recommendationRepository = recommendationRepository;
         this.eventRepository = eventRepository;
+        this.desiredStateService = desiredStateService;
     }
 
     @Transactional
@@ -146,6 +150,8 @@ public class RolloutService {
             RolloutExecutionResponse succeeded = rolloutRepository.mark(rollout.id(), RolloutStatus.SUCCEEDED);
             eventRepository.record(projectId, rollout.deploymentPlanId(), rollout.serviceId(), rollout.environmentId(), rollout.artifactId(),
                     DeploymentIntentEventType.ROLLOUT_SUCCEEDED, request.actor(), request.reason(), Jsonb.object());
+            desiredStateService.recordRolloutSuccess(projectId, rollout.serviceId(), rollout.environmentId(), rollout.artifactId(),
+                    rollout.deploymentPlanId(), rollout.id(), request.actor(), request.reason());
             return succeeded;
         }
         stateRepository.markStatus(projectId, rollout.serviceId(), rollout.environmentId(), rollout.deploymentPlanId(),
