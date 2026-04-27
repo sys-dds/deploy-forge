@@ -29,6 +29,8 @@ class ReleaseArtifactEvidenceIntegrationTest extends CoreReleaseIntentTestSuppor
                   "evidenceType": "TEST_REPORT",
                   "evidenceRef": "https://ci.example/build/42/tests",
                   "evidenceSha": "sha256:evidence123",
+                  "addedBy": "developer@example.com",
+                  "reason": "Evidence proves test coverage",
                   "metadata": {"tests": 184}
                 }
                 """;

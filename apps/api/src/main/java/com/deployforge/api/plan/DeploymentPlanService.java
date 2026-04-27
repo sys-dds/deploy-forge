@@ -96,6 +96,20 @@ public class DeploymentPlanService {
         return cancelled;
     }
 
+    public DeploymentPlanResponse abort(UUID projectId, UUID planId, AbortDeploymentPlanRequest request) {
+        DeploymentPlanResponse plan = get(projectId, planId);
+        if (plan.status() == DeploymentPlanStatus.CANCELLED) {
+            throw new ApiException(HttpStatus.CONFLICT, "PLAN_CANCELLED", "Cancelled plans cannot be aborted");
+        }
+        if (plan.status() == DeploymentPlanStatus.ABORTED) {
+            return plan;
+        }
+        DeploymentPlanResponse aborted = planRepository.abort(plan, request);
+        eventRepository.record(projectId, plan.id(), plan.serviceId(), plan.targetEnvironmentId(), plan.artifactId(),
+                DeploymentIntentEventType.PLAN_ABORTED, request.abortedBy(), request.reason(), Jsonb.object());
+        return aborted;
+    }
+
     private DeploymentPlanResponse createNew(UUID projectId, String idempotencyKey, String requestHash,
             CreateDeploymentPlanRequest request) {
         ProjectResponse project = requireActiveProject(projectId);
@@ -125,7 +139,7 @@ public class DeploymentPlanService {
             eventRepository.record(projectId, null, service.id(), environment.id(), artifact.id(),
                     DeploymentIntentEventType.DEPLOYABILITY_CHECK_FAILED, request.requestedBy(),
                     "Artifact is not deployable", Jsonb.MAPPER.valueToTree(deployability));
-            throw new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "Artifact is not deployable");
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ARTIFACT_NOT_DEPLOYABLE", "Artifact is not deployable");
         }
         RiskCalculation risk = riskCalculator.calculate(environment, service, request.strategy());
         JsonNode snapshot = snapshot(artifact, service, environment, deployability, risk);

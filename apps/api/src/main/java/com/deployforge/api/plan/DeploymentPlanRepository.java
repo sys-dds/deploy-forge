@@ -85,6 +85,21 @@ public class DeploymentPlanRepository {
                 """, this::mapPlan, request.cancelledBy(), request.reason(), plan.id());
     }
 
+    public DeploymentPlanResponse abort(DeploymentPlanResponse plan, AbortDeploymentPlanRequest request) {
+        return jdbcTemplate.queryForObject("""
+                update deployment_plans
+                set status = 'ABORTED',
+                    aborted_at = now(),
+                    aborted_by = ?,
+                    abort_reason = ?,
+                    updated_at = now()
+                where id = ?
+                returning id, project_id, service_id, artifact_id, target_environment_id, strategy, status,
+                    risk_level, reason, requested_by, idempotency_key, request_hash,
+                    evidence_snapshot_json::text, created_at, updated_at, cancelled_at, cancelled_by, cancel_reason
+                """, this::mapPlan, request.abortedBy(), request.reason(), plan.id());
+    }
+
     public int countByProjectAndKey(UUID projectId, String idempotencyKey) {
         Integer count = jdbcTemplate.queryForObject(
                 "select count(*) from deployment_plans where project_id = ? and idempotency_key = ?",

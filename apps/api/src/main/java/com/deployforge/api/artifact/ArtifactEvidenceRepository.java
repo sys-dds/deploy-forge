@@ -25,18 +25,18 @@ public class ArtifactEvidenceRepository {
         UUID id = UUID.randomUUID();
         return jdbcTemplate.queryForObject("""
                 insert into release_artifact_evidence (
-                    id, artifact_id, evidence_type, evidence_ref, evidence_sha, metadata_json
+                    id, artifact_id, evidence_type, evidence_ref, evidence_sha, added_by, reason, metadata_json
                 )
-                values (?, ?, ?, ?, ?, ?)
-                returning id, artifact_id, evidence_type, evidence_ref, evidence_sha, metadata_json::text, created_at
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                returning id, artifact_id, evidence_type, evidence_ref, evidence_sha, added_by, reason, metadata_json::text, created_at
                 """, this::mapEvidence, id, artifactId, request.evidenceType().name(), request.evidenceRef(),
-                request.evidenceSha(), Jsonb.toPgObject(request.metadata()));
+                request.evidenceSha(), request.addedBy(), request.reason(), Jsonb.toPgObject(request.metadata()));
     }
 
     public Optional<ArtifactEvidenceResponse> findByNaturalKey(UUID artifactId, EvidenceType type, String ref) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    select id, artifact_id, evidence_type, evidence_ref, evidence_sha, metadata_json::text, created_at
+                    select id, artifact_id, evidence_type, evidence_ref, evidence_sha, added_by, reason, metadata_json::text, created_at
                     from release_artifact_evidence
                     where artifact_id = ? and evidence_type = ? and evidence_ref = ?
                     """, this::mapEvidence, artifactId, type.name(), ref));
@@ -47,7 +47,7 @@ public class ArtifactEvidenceRepository {
 
     public List<ArtifactEvidenceResponse> findByArtifact(UUID artifactId) {
         return jdbcTemplate.query("""
-                select id, artifact_id, evidence_type, evidence_ref, evidence_sha, metadata_json::text, created_at
+                select id, artifact_id, evidence_type, evidence_ref, evidence_sha, added_by, reason, metadata_json::text, created_at
                 from release_artifact_evidence
                 where artifact_id = ?
                 order by created_at, id
@@ -70,6 +70,8 @@ public class ArtifactEvidenceRepository {
                 EvidenceType.valueOf(rs.getString("evidence_type")),
                 rs.getString("evidence_ref"),
                 rs.getString("evidence_sha"),
+                rs.getString("added_by"),
+                rs.getString("reason"),
                 Jsonb.fromString(rs.getString("metadata_json")),
                 rs.getObject("created_at", OffsetDateTime.class)
         );

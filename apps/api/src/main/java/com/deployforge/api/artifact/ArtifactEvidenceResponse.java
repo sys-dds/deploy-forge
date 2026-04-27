@@ -11,6 +11,8 @@ public record ArtifactEvidenceResponse(
         EvidenceType evidenceType,
         String evidenceRef,
         String evidenceSha,
+        String addedBy,
+        String reason,
         JsonNode metadata,
         OffsetDateTime createdAt
 ) {

@@ -8,6 +8,8 @@ public record AddArtifactEvidenceRequest(
         @NotNull EvidenceType evidenceType,
         @NotBlank String evidenceRef,
         String evidenceSha,
+        @NotBlank String addedBy,
+        String reason,
         JsonNode metadata
 ) {
 }
