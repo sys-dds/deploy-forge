@@ -1,6 +1,7 @@
 package com.deployforge.api;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -160,6 +161,102 @@ abstract class RolloutIntegrationTestSupport extends CoreReleaseIntentTestSuppor
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"startedBy":"release-manager@example.com","reason":"Start rollout"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode evaluateWaveGates(MockMvc mockMvc, String projectId, String rolloutId, int waveNumber,
+            String syntheticGateId, String metricGateId, double errorRate) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollouts/{rolloutId}/waves/{waveNumber}/gates/evaluate",
+                        projectId, rolloutId, waveNumber)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "gateDefinitionIds": ["%s", "%s"],
+                                  "requestedBy": "release-manager@example.com",
+                                  "metrics": {"error_rate": %s}
+                                }
+                                """.formatted(syntheticGateId, metricGateId, errorRate)))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode advanceRollout(MockMvc mockMvc, String projectId, String rolloutId) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollouts/{rolloutId}/advance", projectId, rolloutId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":"release-manager@example.com","reason":"Advance after gates"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode failSecondWave(MockMvc mockMvc, ReadyPlan readyPlan, String rolloutId) throws Exception {
+        evaluateWaveGates(mockMvc, readyPlan.projectId(), rolloutId, 1, readyPlan.syntheticGateId(), readyPlan.metricGateId(), 0.2);
+        advanceRollout(mockMvc, readyPlan.projectId(), rolloutId);
+        evaluateWaveGates(mockMvc, readyPlan.projectId(), rolloutId, 2, readyPlan.syntheticGateId(), readyPlan.metricGateId(), 5.0);
+        return json(mockMvc.perform(get("/api/v1/projects/{projectId}/rollouts/{rolloutId}/rollback-recommendation",
+                        readyPlan.projectId(), rolloutId))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode startRollback(MockMvc mockMvc, String projectId, String recommendationId) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollback-recommendations/{recommendationId}/rollback-executions/start",
+                        projectId, recommendationId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"startedBy":"release-manager@example.com","reason":"Rollback failed canary"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode evaluateRollbackGates(MockMvc mockMvc, String projectId, String rollbackId, String syntheticGateId,
+            String metricGateId, double errorRate) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollback-executions/{rollbackExecutionId}/gates/evaluate",
+                        projectId, rollbackId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "gateDefinitionIds": ["%s", "%s"],
+                                  "requestedBy": "release-manager@example.com",
+                                  "metrics": {"error_rate": %s}
+                                }
+                                """.formatted(syntheticGateId, metricGateId, errorRate)))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode completeRollbackSuccess(MockMvc mockMvc, String projectId, String rollbackId) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollback-executions/{rollbackExecutionId}/complete-success",
+                        projectId, rollbackId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":"release-manager@example.com","reason":"Rollback gates passed"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode completeRollbackFailure(MockMvc mockMvc, String projectId, String rollbackId) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollback-executions/{rollbackExecutionId}/complete-failure",
+                        projectId, rollbackId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"actor":"release-manager@example.com","reason":"Rollback verification failed"}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn());
+    }
+
+    JsonNode retryRollback(MockMvc mockMvc, String projectId, String rollbackId) throws Exception {
+        return json(mockMvc.perform(post("/api/v1/projects/{projectId}/rollback-executions/{rollbackExecutionId}/retry",
+                        projectId, rollbackId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"requestedBy":"release-manager@example.com","reason":"Retry after operator fix"}
                                 """))
                 .andExpect(status().isOk())
                 .andReturn());

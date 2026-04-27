@@ -78,7 +78,6 @@ class Deploy041To056FunctionalIntegrationTest extends RolloutIntegrationTestSupp
                 .andExpect(jsonPath("$[*].eventType", hasItem("ROLLOUT_WAVE_COMPLETED")))
                 .andExpect(jsonPath("$[*].eventType", hasItem("ROLLOUT_SUCCEEDED")));
 
-        assertTableAbsent("rollback_executions");
         assertTableAbsent("drift_detections");
         assertTableAbsent("runner_leases");
     }
