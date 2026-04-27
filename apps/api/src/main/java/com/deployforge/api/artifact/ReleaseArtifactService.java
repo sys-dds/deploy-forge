@@ -80,7 +80,8 @@ public class ReleaseArtifactService {
                 .orElseGet(() -> {
                     ArtifactEvidenceResponse created = evidenceRepository.create(artifact.id(), request);
                     eventRepository.record(projectId, null, serviceId, null, artifactId,
-                            DeploymentIntentEventType.ARTIFACT_EVIDENCE_ADDED, "system", "Artifact evidence added",
+                            DeploymentIntentEventType.ARTIFACT_EVIDENCE_ADDED, request.addedBy(),
+                            request.reason() == null || request.reason().isBlank() ? "Artifact evidence added" : request.reason(),
                             Jsonb.object().put("evidenceType", request.evidenceType().name())
                                     .put("evidenceRef", request.evidenceRef()));
                     return created;
@@ -145,6 +146,8 @@ public class ReleaseArtifactService {
     private ArtifactEvidenceResponse idempotentEvidence(ArtifactEvidenceResponse existing, AddArtifactEvidenceRequest request,
             UUID projectId, UUID serviceId, UUID artifactId) {
         boolean same = Objects.equals(existing.evidenceSha(), request.evidenceSha())
+                && Objects.equals(existing.addedBy(), request.addedBy())
+                && Objects.equals(existing.reason(), request.reason())
                 && Objects.equals(existing.metadata(), Jsonb.emptyObjectIfNull(request.metadata()));
         if (!same) {
             throw new ApiException(HttpStatus.CONFLICT, "REQUEST_CONFLICT",

@@ -134,6 +134,8 @@ abstract class CoreReleaseIntentTestSupport extends PostgresIntegrationTestSuppo
                                   "evidenceType": "%s",
                                   "evidenceRef": "https://ci.example/%s/%s",
                                   "evidenceSha": "sha256:%s",
+                                  "addedBy": "developer@example.com",
+                                  "reason": "Evidence supports deployment readiness",
                                   "metadata": {"passed": true}
                                 }
                                 """.formatted(type, type.toLowerCase(), UUID.randomUUID(), type.toLowerCase())))

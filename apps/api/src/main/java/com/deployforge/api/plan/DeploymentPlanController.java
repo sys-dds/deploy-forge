@@ -47,4 +47,10 @@ public class DeploymentPlanController {
             @Valid @RequestBody CancelDeploymentPlanRequest request) {
         return planService.cancel(projectId, planId, request);
     }
+
+    @PostMapping("/{planId}/abort")
+    public DeploymentPlanResponse abort(@PathVariable UUID projectId, @PathVariable UUID planId,
+            @Valid @RequestBody AbortDeploymentPlanRequest request) {
+        return planService.abort(projectId, planId, request);
+    }
 }
