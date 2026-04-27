@@ -23,16 +23,17 @@ public class ProjectRepository {
     public ProjectResponse create(CreateProjectRequest request) {
         UUID id = UUID.randomUUID();
         return jdbcTemplate.queryForObject("""
-                insert into deployment_projects (id, name, slug, description)
-                values (?, ?, ?, ?)
-                returning id, name, slug, description, created_at
-                """, this::mapProject, id, request.name(), request.slug(), request.description());
+                insert into deployment_projects (id, name, slug, description, owner_team, lifecycle_status)
+                values (?, ?, ?, ?, ?, ?)
+                returning id, name, slug, description, owner_team, lifecycle_status, created_at
+                """, this::mapProject, id, request.name(), request.slug(), request.description(),
+                request.ownerTeam(), lifecycleStatus(request.lifecycleStatus()).name());
     }
 
     public Optional<ProjectResponse> findById(UUID id) {
         try {
             return Optional.ofNullable(jdbcTemplate.queryForObject("""
-                    select id, name, slug, description, created_at
+                    select id, name, slug, description, owner_team, lifecycle_status, created_at
                     from deployment_projects
                     where id = ?
                     """, this::mapProject, id));
@@ -43,7 +44,7 @@ public class ProjectRepository {
 
     public List<ProjectResponse> findAll() {
         return jdbcTemplate.query("""
-                select id, name, slug, description, created_at
+                select id, name, slug, description, owner_team, lifecycle_status, created_at
                 from deployment_projects
                 order by created_at, name
                 """, this::mapProject);
@@ -64,7 +65,13 @@ public class ProjectRepository {
                 rs.getString("name"),
                 rs.getString("slug"),
                 rs.getString("description"),
+                rs.getString("owner_team"),
+                LifecycleStatus.valueOf(rs.getString("lifecycle_status")),
                 rs.getObject("created_at", OffsetDateTime.class)
         );
+    }
+
+    private LifecycleStatus lifecycleStatus(LifecycleStatus status) {
+        return status == null ? LifecycleStatus.ACTIVE : status;
     }
 }

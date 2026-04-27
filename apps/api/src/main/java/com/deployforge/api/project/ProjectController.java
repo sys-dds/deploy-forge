@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.deployforge.api.shared.ApiException;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,16 +26,14 @@ public class ProjectController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public ProjectResponse create(@RequestBody CreateProjectRequest request) {
-        requireText(request.name(), "name");
-        requireText(request.slug(), "slug");
+    public ProjectResponse create(@Valid @RequestBody CreateProjectRequest request) {
         return projectRepository.create(request);
     }
 
     @GetMapping("/{projectId}")
     public ProjectResponse get(@PathVariable UUID projectId) {
         return projectRepository.findById(projectId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Project not found"));
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "Project not found"));
     }
 
     @GetMapping
@@ -42,9 +41,4 @@ public class ProjectController {
         return projectRepository.findAll();
     }
 
-    private void requireText(String value, String field) {
-        if (value == null || value.isBlank()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, field + " is required");
-        }
-    }
 }

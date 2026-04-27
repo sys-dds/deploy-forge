@@ -8,6 +8,8 @@ public record ProjectResponse(
         String name,
         String slug,
         String description,
+        String ownerTeam,
+        LifecycleStatus lifecycleStatus,
         OffsetDateTime createdAt
 ) {
 }
