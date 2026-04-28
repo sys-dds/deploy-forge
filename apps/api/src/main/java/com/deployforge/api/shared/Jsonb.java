@@ -7,7 +7,7 @@ import org.postgresql.util.PGobject;
 
 public final class Jsonb {
 
-    public static final ObjectMapper MAPPER = new ObjectMapper();
+    public static final ObjectMapper MAPPER = new ObjectMapper().findAndRegisterModules();
 
     private Jsonb() {
     }
