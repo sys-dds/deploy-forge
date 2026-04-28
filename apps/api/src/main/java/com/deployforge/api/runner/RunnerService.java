@@ -63,7 +63,20 @@ public class RunnerService {
         return runner;
     }
 
-    public List<Map<String, Object>> runners() {
+    @Transactional
+    public List<Map<String, Object>> runners(UUID projectId) {
+        List<String> staleNodes = jdbcTemplate.queryForList("""
+                select node_id
+                from runner_nodes
+                where status = 'ACTIVE' and last_seen_at < now() - interval '300 seconds'
+                """, String.class);
+        jdbcTemplate.update("""
+                update runner_nodes
+                set status = 'STALE'
+                where status = 'ACTIVE' and last_seen_at < now() - interval '300 seconds'
+                """);
+        staleNodes.forEach(nodeId -> event(projectId, DeploymentIntentEventType.RUNNER_MARKED_STALE,
+                nodeId, "Runner marked stale", null));
         return jdbcTemplate.query("""
                 select id, node_id, status, started_at, last_seen_at, metadata_json::text
                 from runner_nodes
@@ -117,7 +130,7 @@ public class RunnerService {
         return command;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public Map<String, Object> completeSuccess(UUID projectId, String nodeId, UUID commandId, JsonNode request) {
         Map<String, Object> command = requireCompletion(projectId, nodeId, commandId, request);
         jdbcTemplate.update("""
@@ -134,7 +147,7 @@ public class RunnerService {
         return commandService.get(projectId, commandId);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = ApiException.class)
     public Map<String, Object> completeFailure(UUID projectId, String nodeId, UUID commandId, JsonNode request) {
         Map<String, Object> command = requireCompletion(projectId, nodeId, commandId, request);
         String error = text(request, "errorMessage");

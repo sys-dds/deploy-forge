@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,14 +42,29 @@ public class OperatorRecoveryController {
         return recoveryService.staleLeases(projectId);
     }
 
+    @GetMapping("/stale-locks")
+    public List<Map<String, Object>> staleLocks(@PathVariable UUID projectId) {
+        return recoveryService.staleLocks(projectId);
+    }
+
     @GetMapping("/summary")
     public Map<String, Object> summary(@PathVariable UUID projectId) {
         return recoveryService.summary(projectId);
     }
 
     @GetMapping("/investigate")
-    public Map<String, Object> investigate(@PathVariable UUID projectId) {
-        return recoveryService.investigate(projectId);
+    public Map<String, Object> investigate(@PathVariable UUID projectId,
+            @RequestParam(required = false) UUID serviceId,
+            @RequestParam(required = false) UUID environmentId,
+            @RequestParam(required = false) String commandStatus,
+            @RequestParam(required = false) String driftStatus,
+            @RequestParam(required = false) String repairPlanStatus) {
+        return recoveryService.investigate(projectId, serviceId, environmentId, commandStatus, driftStatus, repairPlanStatus);
+    }
+
+    @GetMapping("/recovery-evidence")
+    public Map<String, Object> recoveryEvidence(@PathVariable UUID projectId) {
+        return recoveryService.recoveryEvidence(projectId);
     }
 
     @GetMapping("/recovery-actions")
