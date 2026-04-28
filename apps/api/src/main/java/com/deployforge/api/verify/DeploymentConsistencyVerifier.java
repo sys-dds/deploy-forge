@@ -38,6 +38,9 @@ public class DeploymentConsistencyVerifier {
         actualMismatchNeedsOpenDrift(projectId, violations);
         staleTargetNeedsOpenDrift(projectId, violations);
         expiredCommandLeaseReported(projectId, violations);
+        terminalCommandNoLease(projectId, violations);
+        repairPlanApprovalIntegrity(projectId, violations);
+        rollbackDesiredStateMatches(projectId, violations);
         return new DeploymentConsistencyResponse(projectId, violations.isEmpty(), violations);
     }
 
@@ -284,5 +287,38 @@ public class DeploymentConsistencyVerifier {
                 """, (RowCallbackHandler) rs -> violations.add(new ConsistencyViolationResponse("EXPIRED_COMMAND_LEASE", "WARNING",
                 "Active command has an expired lease and needs runner takeover or operator recovery", rs.getObject("id", UUID.class),
                 "CLAIM_OR_FORCE_RELEASE_STALE_LEASE")), projectId);
+    }
+
+    private void terminalCommandNoLease(UUID projectId, List<ConsistencyViolationResponse> violations) {
+        jdbcTemplate.query("""
+                select id
+                from deployment_commands
+                where project_id = ? and status in ('SUCCEEDED','FAILED','PARKED','CANCELLED')
+                    and (leased_by_node_id is not null or lease_expires_at is not null)
+                """, (RowCallbackHandler) rs -> violations.add(new ConsistencyViolationResponse("TERMINAL_COMMAND_STILL_LEASED", "ERROR",
+                "Terminal command still has lease metadata", rs.getObject("id", UUID.class),
+                "FORCE_RELEASE_STALE_LEASE")), projectId);
+    }
+
+    private void repairPlanApprovalIntegrity(UUID projectId, List<ConsistencyViolationResponse> violations) {
+        jdbcTemplate.query("""
+                select id
+                from repair_plans
+                where project_id = ? and requires_approval and status = 'EXECUTION_RECOMMENDED' and approved_at is null
+                """, (RowCallbackHandler) rs -> violations.add(new ConsistencyViolationResponse("REPAIR_PLAN_EXECUTION_WITHOUT_APPROVAL", "ERROR",
+                "Repair plan recommended execution without required approval", rs.getObject("id", UUID.class),
+                "REVIEW_REPAIR_PLAN")), projectId);
+    }
+
+    private void rollbackDesiredStateMatches(UUID projectId, List<ConsistencyViolationResponse> violations) {
+        jdbcTemplate.query("""
+                select rb.id
+                from rollback_executions rb
+                join desired_environment_states d on d.service_id = rb.service_id and d.environment_id = rb.environment_id
+                where rb.project_id = ? and rb.status = 'SUCCEEDED'
+                    and d.desired_artifact_id is distinct from rb.target_artifact_id
+                """, (RowCallbackHandler) rs -> violations.add(new ConsistencyViolationResponse("ROLLBACK_DESIRED_STATE_MISMATCH", "ERROR",
+                "Successful rollback target does not match desired state", rs.getObject("id", UUID.class),
+                "RECORD_DESIRED_STATE")), projectId);
     }
 }

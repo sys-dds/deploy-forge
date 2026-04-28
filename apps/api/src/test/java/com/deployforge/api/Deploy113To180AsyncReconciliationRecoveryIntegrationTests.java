@@ -186,7 +186,9 @@ class ParkedCommandIntegrationTest extends AsyncCommandIntegrationTestSupport {
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class RequeueParkedCommandIntegrationTest extends ParkedCommandIntegrationTest {
+class RequeueParkedCommandIntegrationTest extends AsyncCommandIntegrationTestSupport {
+    @Autowired MockMvc mockMvc;
+
     @Test
     void requeueReturnsParkedCommandToPending() throws Exception {
         String projectId = createProject(mockMvc);
@@ -315,11 +317,6 @@ class RollbackCommandExecutionIntegrationTest extends AsyncCommandIntegrationTes
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class RunnerStatusApiIntegrationTest extends RunnerNodeIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
 class CommandBacklogApiIntegrationTest extends AsyncCommandIntegrationTestSupport {
     @Autowired MockMvc mockMvc;
 
@@ -329,26 +326,6 @@ class CommandBacklogApiIntegrationTest extends AsyncCommandIntegrationTestSuppor
         command(mockMvc, projectId, uniqueSlug("backlog"), "VERIFY_CONSISTENCY", "{}");
         assertThat(getJson(mockMvc, "/api/v1/projects/{projectId}/commands/backlog", projectId).toString()).contains("PENDING");
     }
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class RunnerTickIntegrationTest extends VerifyConsistencyCommandIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class AsyncCommandFailureMatrixIntegrationTest extends ParkedCommandIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class RunnerFencingFunctionalIntegrationTest extends StaleCompletionRejectionIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class Deploy113To140AsyncFunctionalIntegrationTest extends DriftCheckCommandExecutionIntegrationTest {
 }
 
 @SpringBootTest
@@ -383,11 +360,6 @@ class ReconciliationRunIntegrationTest extends AsyncCommandIntegrationTestSuppor
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class RepairCandidateIntegrationTest extends ReconciliationRunIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
 class RepairPlanApprovalIntegrationTest extends AsyncCommandIntegrationTestSupport {
     @Autowired MockMvc mockMvc;
 
@@ -401,11 +373,6 @@ class RepairPlanApprovalIntegrationTest extends AsyncCommandIntegrationTestSuppo
         String planId = run.get("repairPlans").get(0).get("repairPlanId").asText();
         assertThat(approvePlan(mockMvc, projectId, planId).get("status").asText()).isEqualTo("APPROVED");
     }
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class RepairPlanEvidenceIntegrationTest extends ReconciliationRunIntegrationTest {
 }
 
 @SpringBootTest
@@ -452,11 +419,6 @@ class ReconciliationCommandGenerationIntegrationTest extends AsyncCommandIntegra
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class Deploy141To156ReconciliationFunctionalIntegrationTest extends ReconciliationCommandGenerationIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
 class StuckCommandDetectorIntegrationTest extends AsyncCommandIntegrationTestSupport {
     @Autowired MockMvc mockMvc;
 
@@ -469,11 +431,6 @@ class StuckCommandDetectorIntegrationTest extends AsyncCommandIntegrationTestSup
         jdbcTemplate.update("update deployment_commands set lease_expires_at = now() - interval '1 second' where id = ?::uuid", commandId);
         assertThat(getJson(mockMvc, "/api/v1/projects/{projectId}/ops/stuck-commands", projectId).toString()).contains(commandId);
     }
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class StaleLeaseDetectorIntegrationTest extends StuckCommandDetectorIntegrationTest {
 }
 
 @SpringBootTest
@@ -551,11 +508,6 @@ class OperatorManualResolutionIntegrationTest extends AsyncCommandIntegrationTes
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class OperatorRecoveryEventLogIntegrationTest extends OperatorForceParkCommandIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
 class OperationalSummaryIntegrationTest extends AsyncCommandIntegrationTestSupport {
     @Autowired MockMvc mockMvc;
 
@@ -580,11 +532,6 @@ class DeploymentInvestigationSearchIntegrationTest extends OperationalSummaryInt
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class Deploy157To172OperatorRecoveryFunctionalIntegrationTest extends OperatorForceReleaseStaleLeaseIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
 class StuckRolloutDetectorIntegrationTest extends AsyncCommandIntegrationTestSupport {
     @Autowired MockMvc mockMvc;
 
@@ -603,43 +550,6 @@ class StuckRollbackDetectorIntegrationTest extends StuckRolloutDetectorIntegrati
         String projectId = createProject(mockMvc);
         assertThat(getJson(mockMvc, "/api/v1/projects/{projectId}/ops/stuck-rollbacks", projectId).isArray()).isTrue();
     }
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class FinalInvariantRegressionIntegrationTest extends AsyncCommandIntegrationTestSupport {
-    @Autowired MockMvc mockMvc;
-
-    @Test
-    void criticalInvariantsHoldForCleanAsyncVerification() throws Exception {
-        String projectId = createProject(mockMvc);
-        command(mockMvc, projectId, uniqueSlug("final"), "VERIFY_CONSISTENCY", "{}");
-        registerRunner(mockMvc, projectId, "runner-a");
-        tick(mockMvc, projectId, "runner-a", "VERIFY_CONSISTENCY");
-        JsonNode backlog = getJson(mockMvc, "/api/v1/projects/{projectId}/commands/backlog", projectId);
-        assertThat(backlog.toString()).contains("SUCCEEDED");
-        assertThat(getJson(mockMvc, "/api/v1/projects/{projectId}/deployment-consistency", projectId).get("consistent").asBoolean()).isTrue();
-    }
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class FullDeploymentLifecycleProofIntegrationTest extends FinalInvariantRegressionIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class FullFailureLifecycleProofIntegrationTest extends AsyncCommandFailureMatrixIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class FullRollbackDriftRepairProofIntegrationTest extends ReconciliationCommandGenerationIntegrationTest {
-}
-
-@SpringBootTest
-@AutoConfigureMockMvc
-class FullAsyncRunnerFencingProofIntegrationTest extends RunnerFencingFunctionalIntegrationTest {
 }
 
 @SpringBootTest

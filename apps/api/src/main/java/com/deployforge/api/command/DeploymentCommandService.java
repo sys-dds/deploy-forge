@@ -35,6 +35,8 @@ public class DeploymentCommandService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "IDEMPOTENCY_KEY_REQUIRED", "Idempotency-Key header is required");
         }
         String hash = requestHash(request);
+        String commandType = text(request, "commandType");
+        validateCommandType(commandType);
         List<Map<String, Object>> existing = jdbcTemplate.query(commandSelect() + " where project_id = ? and idempotency_key = ?",
                 CommandRows::command, projectId, idempotencyKey);
         if (!existing.isEmpty()) {
@@ -52,7 +54,7 @@ public class DeploymentCommandService {
                 )
                 values (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?, ?)
                 returning *
-                """, CommandRows::command, id, projectId, text(request, "commandType"), idempotencyKey, hash,
+                """, CommandRows::command, id, projectId, commandType, idempotencyKey, hash,
                 Jsonb.toPgObject(request.get("payload")), intValue(request, "priority", 100),
                 intValue(request, "maxAttempts", 3), text(request, "createdBy"), text(request, "reason"));
         event(projectId, DeploymentIntentEventType.COMMAND_CREATED, text(request, "createdBy"), text(request, "reason"), id);
@@ -154,6 +156,14 @@ public class DeploymentCommandService {
         Integer count = jdbcTemplate.queryForObject("select count(*) from deployment_projects where id = ?", Integer.class, projectId);
         if (count == null || count == 0) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "Project not found");
+        }
+    }
+
+    private void validateCommandType(String commandType) {
+        if (!List.of("ROLLOUT_START", "ROLLOUT_ADVANCE", "ROLLOUT_PAUSE", "ROLLOUT_RESUME", "ROLLOUT_ABORT",
+                "ROLLBACK_START", "ROLLBACK_COMPLETE_SUCCESS", "ROLLBACK_COMPLETE_FAILURE", "ROLLBACK_RETRY",
+                "DRIFT_CHECK", "RECONCILE_ENVIRONMENT", "CREATE_REPAIR_INTENT", "VERIFY_CONSISTENCY").contains(commandType)) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "UNSUPPORTED_COMMAND_TYPE", "Unsupported command type: " + commandType);
         }
     }
 

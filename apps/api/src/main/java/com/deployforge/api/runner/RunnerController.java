@@ -33,7 +33,7 @@ public class RunnerController {
 
     @GetMapping("/runners")
     public List<Map<String, Object>> runners(@PathVariable UUID projectId) {
-        return runnerService.runners();
+        return runnerService.runners(projectId);
     }
 
     @PostMapping("/runners/{nodeId}/commands/claim")

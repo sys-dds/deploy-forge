@@ -1,5 +1,6 @@
 package com.deployforge.api.ops;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,6 +41,17 @@ public class OperatorRecoveryService {
         return stuckCommands(projectId);
     }
 
+    public List<Map<String, Object>> staleLocks(UUID projectId) {
+        return jdbcTemplate.queryForList("""
+                select id as "lockId", deployment_plan_id as "deploymentPlanId", service_id as "serviceId",
+                    environment_id as "environmentId", status, lock_owner as "lockOwner", reason,
+                    fencing_token as "fencingToken", acquired_at as "acquiredAt", expires_at as "expiresAt"
+                from deployment_locks
+                where project_id = ? and status = 'ACTIVE' and expires_at < now()
+                order by expires_at asc
+                """, projectId);
+    }
+
     public List<Map<String, Object>> stuckRollouts(UUID projectId) {
         return jdbcTemplate.queryForList("""
                 select id as "rolloutId", deployment_plan_id as "deploymentPlanId", service_id as "serviceId",
@@ -71,28 +83,29 @@ public class OperatorRecoveryService {
                 "openDriftCount", count("select count(*) from drift_findings where project_id = ? and status in ('OPEN','ACKNOWLEDGED')", projectId),
                 "proposedRepairPlanCount", count("select count(*) from repair_plans where project_id = ? and status = 'PROPOSED'", projectId),
                 "stuckCommandCount", stuckCommands(projectId).size(),
+                "staleLockCount", staleLocks(projectId).size(),
                 "activeRolloutCount", count("select count(*) from rollout_executions where project_id = ? and status in ('RUNNING','WAITING_FOR_GATES','PAUSED')", projectId),
                 "activeRollbackCount", count("select count(*) from rollback_executions where project_id = ? and status in ('RUNNING','WAITING_FOR_GATES')", projectId));
     }
 
-    public Map<String, Object> investigate(UUID projectId) {
+    public Map<String, Object> investigate(UUID projectId, UUID serviceId, UUID environmentId, String commandStatus,
+            String driftStatus, String repairPlanStatus) {
         return Map.of(
-                "commands", jdbcTemplate.query(commandSelect() + " where project_id = ? order by created_at desc limit 25",
-                        CommandRows::command, projectId),
-                "driftFindings", jdbcTemplate.queryForList("""
-                        select id as "findingId", drift_type as "driftType", severity, status, message, recommended_action as "recommendedAction"
-                        from drift_findings
-                        where project_id = ?
-                        order by first_detected_at desc
-                        limit 25
-                        """, projectId),
-                "repairPlans", jdbcTemplate.queryForList("""
-                        select id as "repairPlanId", plan_type as "planType", status, requires_approval as "requiresApproval", created_at as "createdAt"
-                        from repair_plans
-                        where project_id = ?
-                        order by created_at desc
-                        limit 25
-                        """, projectId));
+                "commands", commands(projectId, commandStatus),
+                "driftFindings", driftFindings(projectId, serviceId, environmentId, driftStatus),
+                "repairPlans", repairPlans(projectId, repairPlanStatus));
+    }
+
+    public Map<String, Object> recoveryEvidence(UUID projectId) {
+        return Map.of(
+                "summary", summary(projectId),
+                "stuckCommands", stuckCommands(projectId),
+                "stuckRollouts", stuckRollouts(projectId),
+                "stuckRollbacks", stuckRollbacks(projectId),
+                "staleLeases", staleLeases(projectId),
+                "staleLocks", staleLocks(projectId),
+                "operatorRecoveryActions", recoveryEvents(projectId),
+                "investigation", investigate(projectId, null, null, null, null, null));
     }
 
     @Transactional
@@ -180,6 +193,58 @@ public class OperatorRecoveryService {
 
     private Integer count(String sql, UUID projectId) {
         return jdbcTemplate.queryForObject(sql, Integer.class, projectId);
+    }
+
+    private List<Map<String, Object>> commands(UUID projectId, String commandStatus) {
+        if (commandStatus == null || commandStatus.isBlank()) {
+            return jdbcTemplate.query(commandSelect() + " where project_id = ? order by created_at desc limit 25",
+                    CommandRows::command, projectId);
+        }
+        return jdbcTemplate.query(commandSelect() + " where project_id = ? and status = ? order by created_at desc limit 25",
+                CommandRows::command, projectId, commandStatus);
+    }
+
+    private List<Map<String, Object>> driftFindings(UUID projectId, UUID serviceId, UUID environmentId, String driftStatus) {
+        StringBuilder sql = new StringBuilder("""
+                select id as "findingId", drift_type as "driftType", severity, status, message, recommended_action as "recommendedAction"
+                from drift_findings
+                where project_id = ?
+                """);
+        List<Object> args = new ArrayList<>();
+        args.add(projectId);
+        if (serviceId != null) {
+            sql.append(" and service_id = ? ");
+            args.add(serviceId);
+        }
+        if (environmentId != null) {
+            sql.append(" and environment_id = ? ");
+            args.add(environmentId);
+        }
+        if (driftStatus != null && !driftStatus.isBlank()) {
+            sql.append(" and status = ? ");
+            args.add(driftStatus);
+        }
+        sql.append(" order by first_detected_at desc limit 25");
+        return jdbcTemplate.queryForList(sql.toString(), args.toArray());
+    }
+
+    private List<Map<String, Object>> repairPlans(UUID projectId, String repairPlanStatus) {
+        if (repairPlanStatus == null || repairPlanStatus.isBlank()) {
+            return jdbcTemplate.queryForList("""
+                    select id as "repairPlanId", plan_type as "planType", status, requires_approval as "requiresApproval", created_at as "createdAt"
+                    from repair_plans
+                    where project_id = ?
+                    order by created_at desc
+                    limit 25
+                    """, projectId);
+        }
+        return jdbcTemplate.queryForList("""
+                select id as "repairPlanId", plan_type as "planType", status, requires_approval as "requiresApproval", created_at as "createdAt"
+                from repair_plans
+                where project_id = ? and status = ?
+                order by created_at desc
+                limit 25
+                """, projectId, repairPlanStatus);
     }
 
     private static String commandSelect() {

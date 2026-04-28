@@ -36,18 +36,31 @@ public class ReconciliationService {
     public Map<String, Object> putPolicy(UUID projectId, JsonNode request) {
         UUID serviceId = optionalUuid(request, "serviceId");
         UUID environmentId = optionalUuid(request, "environmentId");
+        List<Map<String, Object>> existing = jdbcTemplate.query("""
+                select id, project_id, service_id, environment_id, enabled, auto_create_repair_intents,
+                    require_approval_for_repair, max_auto_repair_severity, created_by, reason, created_at, updated_at
+                from reconciliation_policies
+                where project_id = ?
+                  and service_id is not distinct from ?
+                  and environment_id is not distinct from ?
+                """, ReconciliationRows::policy, projectId, serviceId, environmentId);
+        if (!existing.isEmpty()) {
+            return jdbcTemplate.query("""
+                    update reconciliation_policies
+                    set enabled = ?, auto_create_repair_intents = ?, require_approval_for_repair = ?,
+                        max_auto_repair_severity = ?, reason = ?, updated_at = now()
+                    where id = ?
+                    returning *
+                    """, ReconciliationRows::policy, bool(request, "enabled", true),
+                    bool(request, "autoCreateRepairIntents", false), bool(request, "requireApprovalForRepair", true),
+                    text(request, "maxAutoRepairSeverity", "WARNING"), text(request, "reason"), existing.get(0).get("policyId")).get(0);
+        }
         return jdbcTemplate.query("""
                 insert into reconciliation_policies (
                     id, project_id, service_id, environment_id, enabled, auto_create_repair_intents,
                     require_approval_for_repair, max_auto_repair_severity, created_by, reason
                 )
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict (project_id, service_id, environment_id) do update
-                set enabled = excluded.enabled,
-                    auto_create_repair_intents = excluded.auto_create_repair_intents,
-                    require_approval_for_repair = excluded.require_approval_for_repair,
-                    max_auto_repair_severity = excluded.max_auto_repair_severity,
-                    updated_at = now()
                 returning *
                 """, ReconciliationRows::policy, UUID.randomUUID(), projectId, serviceId, environmentId,
                 bool(request, "enabled", true), bool(request, "autoCreateRepairIntents", false),
@@ -231,8 +244,11 @@ public class ReconciliationService {
     }
 
     private static UUID optionalUuid(JsonNode node, String field) {
-        return node != null && node.hasNonNull(field) && !node.get(field).asText().isBlank()
-                ? UUID.fromString(node.get(field).asText()) : null;
+        if (node == null || !node.hasNonNull(field)) {
+            return null;
+        }
+        String value = node.get(field).asText();
+        return value.isBlank() || "null".equalsIgnoreCase(value) ? null : UUID.fromString(value);
     }
 
     private static boolean bool(JsonNode node, String field, boolean fallback) {
